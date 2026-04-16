@@ -1,14 +1,16 @@
-const express = require('express');
 const mongoose = require('mongoose');
+const express = require('express');
 const app = express();
 app.use(express.json());
 
-// 비밀번호가 포함된 주석을 완전히 지웠습니다.
 const MONGO_URI = process.env.MONGO_URI;
 
-mongoose.connect(MONGO_URI)
-    .then(() => console.log("✅ DB 연결 성공"))
-    .catch((err) => console.error("❌ 연결 실패:", err));
+// DB 연결 함수 (연결 재사용)
+let cachedDb = null;
+async function connectToDatabase() {
+    if (cachedDb) return;
+    cachedDb = await mongoose.connect(MONGO_URI);
+}
 
 const UserSchema = new mongoose.Schema({
     userId: Number,
@@ -17,22 +19,28 @@ const UserSchema = new mongoose.Schema({
     isBanned: { type: Boolean, default: false },
     reason: String
 });
-const User = mongoose.model('User', UserSchema);
+const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
-app.post('/check', async (req, res) => {
-    const { userId, hwid } = req.body;
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
+app.post('/api/check', async (req, res) => {
     try {
+        await connectToDatabase();
+        const { userId, hwid } = req.body;
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
         const banData = await User.findOne({
             isBanned: true,
             $or: [{ ip: ip }, { hwid: hwid }]
         });
-        if (banData) return res.json({ allowed: false, reason: banData.reason });
+
+        if (banData) {
+            return res.json({ allowed: false, reason: banData.reason });
+        }
 
         await User.findOneAndUpdate({ userId }, { ip, hwid }, { upsert: true });
         res.json({ allowed: true });
-    } catch (err) { res.status(500).send("Error"); }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.listen(3000, () => console.log("Server running"));
+module.exports = app;
