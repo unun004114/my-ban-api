@@ -1,5 +1,9 @@
 {
+  "version": 2,
   "rewrites": [
-    { "source": "/check", "destination": "/api/check" }
+    {
+      "source": "/check",
+      "destination": "/api/index.js"
+    }
   ]
 }
